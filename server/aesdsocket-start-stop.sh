@@ -10,7 +10,7 @@ case "$1" in
 		start-stop-daemon aesdsocket -K -n aesdsocket
 		;;
 	*)
-		echo "USAGE:: start|stop"
+		echo "USAGE:: $0 {start|stop}"
 	exit 1
 esac
 
