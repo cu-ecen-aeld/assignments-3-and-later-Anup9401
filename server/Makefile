@@ -1,6 +1,6 @@
 
 APP=aesdsocket
-CFLAGS=-Wall -Werror
+CFLAGS=-Wall -Werror -g -O0
 CFILE=$(APP).c
 OBJECTS=$(APP).o
 BINARY=$(APP)

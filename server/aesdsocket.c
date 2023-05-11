@@ -9,7 +9,6 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
-
 #include <stdio.h>
 
 #define PORT 9000
@@ -34,11 +33,11 @@ void cleanup(int closeSocket){
 
 	if(closeSocket){
 		if(sfd!=-1){
+			shutdown(sfd,SHUT_RDWR);
 			close(sfd);
 		}
 		if(fd!=-1){
 			close(fd);
-			fd=-1;
 		}
 		remove("/var/tmp/aesdsocketdata");
 	}
@@ -75,6 +74,13 @@ void socketServer(){
 	srv.sin_family=AF_INET;
 	srv.sin_port=htons(PORT);
 	srv.sin_addr.s_addr=inet_addr("0.0.0.0");
+
+	int yes=1;
+	if(setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
+		syslog(LOG_ERR,"setsockopt() failed\n");
+		cleanup(1);
+		exit(1);
+	}
 
 	if(bind(sfd,(struct sockaddr *)&srv, sizeof(srv))){
 		syslog(LOG_ERR,"bind() failed\n");
