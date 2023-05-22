@@ -12,7 +12,7 @@
 #include <stdio.h>
 
 #define PORT 9000
-#define MEM_SIZE 8
+#define MEM_SIZE 1024
 
 int offset=0;
 int sfd=-1, nsfd=-1, fd=-1;
