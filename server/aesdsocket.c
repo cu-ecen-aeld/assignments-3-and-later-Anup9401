@@ -58,9 +58,10 @@ void cleanup(){
 	SLIST_INIT(&head);
 
 	if(thread_time_param!=NULL){
-		void *timestampThread=NULL;
-		pthread_join(thread_time_param->tid,&timestampThread);
-		free(timestampThread);
+		if(pthread_cancel(thread_time_param->tid)){
+			syslog(LOG_ERR,"pthread_canel() failed\n");
+		}
+		free(thread_time_param);	
 	}
 	if(sfd!=-1){
 		shutdown(sfd,SHUT_RDWR);
@@ -272,6 +273,16 @@ void socketServer(){
 }
 
 void *timestampThread(void *thread_param){
+
+	int unused;
+	if(pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &unused)){
+		syslog(LOG_ERR,"pthread_setcancelstate() failed\n");
+		kill(getpid(),2);
+	}
+	if(pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, &unused)){
+		syslog(LOG_ERR,"pthread_setcancelstate() failed\n");
+		kill(getpid(),2);
+	}
 
 	sigset_t sigset;
 	sigfillset(&sigset);
