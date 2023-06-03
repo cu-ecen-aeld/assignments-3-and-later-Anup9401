@@ -1,14 +1,15 @@
 
-APP=aesdsocket
-CFLAGS=-Wall -Werror -g -O0
-CFILE=$(APP).c
-OBJECTS=$(APP).o
-BINARY=$(APP)
+APP ?= aesdsocket
+CFLAGS ?= -Wall -Werror -g -O0
+LDFLAGS ?= -lpthread
+CFILE ?= $(APP).c
+OBJECTS ?= $(APP).o
+BINARY ?= $(APP)
 
 ifdef CROSS_COMPILE
-	CC=$(CROSS_COMPILE)gcc
+	CC ?= $(CROSS_COMPILE)gcc
 else
-	CC=gcc
+	CC ?= gcc
 endif
 
 default : $(BINARY)
@@ -16,10 +17,10 @@ default : $(BINARY)
 all : $(BINARY)
 
 $(BINARY) : $(OBJECTS)
-	$(CC) -o $@ $^
+	$(CC) $^ -o $@ $(LDFLAGS)
 
 %.o:%.c
-	$(CC) $(CFLAGS) -c -o $@ $^
+	$(CC) $(CFLAGS) -c $^ -o $@
 
 clean : 
 	rm -rf $(BINARY) $(OBJECTS)
