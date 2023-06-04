@@ -1,7 +1,7 @@
 
 APP ?= aesdsocket
 CFLAGS ?= -Wall -Werror -g -O0
-LDFLAGS ?= -lpthread
+LDFLAGS ?= -lpthread -lrt
 CFILE ?= $(APP).c
 OBJECTS ?= $(APP).o
 BINARY ?= $(APP)
