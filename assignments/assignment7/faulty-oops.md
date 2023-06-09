@@ -1,13 +1,15 @@
-#Analysis of faulty-oops
+# Analysis of faulty-oops
 
-##Description
+## Description
 
 ```
 
-Any address used by the processor is a virtual address and is mapped to physical addresses through a complex structure of page tables (the exceptions are physical addresses used with the memory management subsystem itself). When an invalid pointer is dereferenced, the paging mechanism fails to map the pointer to a physical address, and the processor signals a page fault to the operating system. If the address is not valid, the kernel is not able to “page in” the missing address; it (usually) generates an oops if this happens while the processor is in supervisor mode.
+Any address used by the processor is a virtual address and is mapped to physical addresses through a complex structure of page tables (the exceptions are physical addresses used with the memory management subsystem itself). 
+When an invalid pointer is dereferenced, the paging mechanism fails to map the pointer to a physical address, and the processor signals a page fault to the operating system. 
+If the address is not valid, the kernel is not able to “page in” the missing address; it (usually) generates an oops if this happens while the processor is in supervisor mode.
 ```
 
-##Sample faulty-oops message
+## Sample faulty-oops message
 
 ```
 
@@ -57,7 +59,7 @@ Code: d2800001 d2800000 d503233f d50323bf (b900003f)
 ---[ end trace a5863f4929eff37f ]---
 ```
 
-##Debugging kernel object
+## Debugging kernel object
 
 ```
 
@@ -80,7 +82,7 @@ Disassembly of section .text:
   1c:	d503201f 	nop
 ```
 
-##Notes
+## Notes
 
 ```
 
