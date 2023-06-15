@@ -89,12 +89,12 @@ void cleanup(){
 		shutdown(sfd,SHUT_RDWR);
 		close(sfd);
 	}
+#if ENABLE_SYS_FILE
 	if(fd!=-1){
 		close(fd);
-#if ENABLE_SYS_FILE
 		unlink(FILE_PATH);
-#endif
 	}
+#endif
 	if(pthread_mutex_destroy(&mutex)){
 		syslog(LOG_ERR,"pthread_mutex_destroy() failed\n");
 	}
@@ -152,13 +152,29 @@ void *clientThread(void *thread_param){
 		if(currPackLen){
 
 			if(pthread_mutex_lock(thread_args->mutex)==0){
-
+#if USE_AESD_CHAR_DEVICE
+				thread_args->fd=open(FILE_PATH,O_WRONLY|O_APPEND);
+				if(thread_args->fd==-1){
+					syslog(LOG_DEBUG,"fopen() client write failed\n");
+					thread_args->thread_complete=true;
+					break;
+				}
+#endif
 				int writeLen=write(thread_args->fd, packet, currPackLen);
 				if(writeLen==-1){
 					syslog(LOG_DEBUG,"write() packet failed\n");
 					thread_args->thread_complete=true;
 					break;
 				}
+#if USE_AESD_CHAR_DEVICE
+				close(thread_args->fd);
+				thread_args->fd=open(FILE_PATH,O_RDONLY);
+				if(thread_args->fd==-1){
+					syslog(LOG_DEBUG,"fopen() client read failed\n");
+					thread_args->thread_complete=true;
+					break;
+				}
+#endif
 #if ENABLE_SYS_FILE
 				if(lseek(thread_args->fd,0,SEEK_SET)==-1){
 					syslog(LOG_DEBUG,"lseek() failed\n");
@@ -176,6 +192,9 @@ void *clientThread(void *thread_param){
 						break;
 					}
 				}
+#if USE_AESD_CHAR_DEVICE
+				close(thread_args->fd);
+#endif
 				if(sendLen==-1){
 					thread_args->thread_complete=true;
 					break;
@@ -446,12 +465,13 @@ int main( int argc, char *argv[]){
 	}
 
 	SLIST_INIT(&head);
+#if ENABLE_SYS_FILE
 	fd=open(FILE_PATH,O_CREAT|O_TRUNC|O_RDWR,0644);
 	if(fd==-1){
 		syslog(LOG_ERR,"open() "FILE_PATH" failed\n");
 		exit(1);
 	}
-
+#endif
 #if ENABLE_TIMESTAMP
 	thread_time_param = (thread_time *) malloc(sizeof(thread_time));
 
