@@ -14,14 +14,32 @@
 #include <pthread.h>
 #include "queue.h"
 
+#define USE_AESD_CHAR_DEVICE 1
+
+#if USE_AESD_CHAR_DEVICE
+#define ENABLE_TIMESTAMP 0
+#define ENABLE_SYS_FILE 0
+#else
+#define ENABLE_TIMESTAMP 1
+#define ENABLE_SYS_FILE 1
+#endif
+
 #define PORT 9000
 #define MEM_SIZE 1024
 
+#if ENABLE_TIMESTAMP
 typedef struct {
 	pthread_mutex_t *mutex;
 	pthread_t tid;
 	int fd;
 }thread_time;
+#endif
+
+#if ENABLE_SYS_FILE
+#define FILE_PATH "/var/tmp/aesdsocketdata"
+#else
+#define FILE_PATH "/dev/aesdchar"
+#endif
 
 typedef struct {
 	pthread_mutex_t *mutex;
@@ -39,7 +57,9 @@ struct entry {
 
 SLIST_HEAD(slisthead, entry) head;
 
+#if ENABLE_TIMESTAMP
 thread_time *thread_time_param=NULL;
+#endif
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 int sfd=-1, fd=-1;
 bool srv_terminated=false;
@@ -57,19 +77,23 @@ void cleanup(){
 	}
 	SLIST_INIT(&head);
 
+#if ENABLE_TIMESTAMP
 	if(thread_time_param!=NULL){
 		if(pthread_cancel(thread_time_param->tid)){
 			syslog(LOG_ERR,"pthread_canel() failed\n");
 		}
 		free(thread_time_param);	
 	}
+#endif
 	if(sfd!=-1){
 		shutdown(sfd,SHUT_RDWR);
 		close(sfd);
 	}
 	if(fd!=-1){
 		close(fd);
-		unlink("/var/tmp/aesdsocketdata");
+#if ENABLE_SYS_FILE
+		unlink(FILE_PATH);
+#endif
 	}
 	if(pthread_mutex_destroy(&mutex)){
 		syslog(LOG_ERR,"pthread_mutex_destroy() failed\n");
@@ -135,11 +159,13 @@ void *clientThread(void *thread_param){
 					thread_args->thread_complete=true;
 					break;
 				}
+#if ENABLE_SYS_FILE
 				if(lseek(thread_args->fd,0,SEEK_SET)==-1){
 					syslog(LOG_DEBUG,"lseek() failed\n");
 					thread_args->thread_complete=true;
 					break;
 				}
+#endif
 				char buf[MEM_SIZE+1];
 				int readLen=0,sendLen=0;
 				while((readLen=read(thread_args->fd,buf,MEM_SIZE))){
@@ -272,6 +298,7 @@ void socketServer(){
 
 }
 
+#if ENABLE_TIMESTAMP
 void *timestampThread(void *thread_param){
 
 	int unused;
@@ -335,6 +362,7 @@ void *timestampThread(void *thread_param){
 	pthread_exit(thread_param);
 
 }
+#endif
 
 int main( int argc, char *argv[]){
 
@@ -418,12 +446,13 @@ int main( int argc, char *argv[]){
 	}
 
 	SLIST_INIT(&head);
-	fd=open("/var/tmp/aesdsocketdata",O_CREAT|O_TRUNC|O_RDWR,0644);
+	fd=open(FILE_PATH,O_CREAT|O_TRUNC|O_RDWR,0644);
 	if(fd==-1){
-		syslog(LOG_ERR,"open() /var/tmp/aesdsocketdata failed\n");
+		syslog(LOG_ERR,"open() "FILE_PATH" failed\n");
 		exit(1);
 	}
 
+#if ENABLE_TIMESTAMP
 	thread_time_param = (thread_time *) malloc(sizeof(thread_time));
 
 	thread_time_param->mutex=&mutex;
@@ -439,6 +468,7 @@ int main( int argc, char *argv[]){
 		syslog(LOG_ERR,"malloc() failed for timestamp thread param\n");
 		exit(1);
 	}
+#endif
 
 	socketServer();
 
