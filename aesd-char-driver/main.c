@@ -19,6 +19,8 @@
 #include <linux/fs.h> // file_operations
 #include <linux/slab.h>         /* kmalloc() */
 #include "aesdchar.h"
+#include "aesd_ioctl.h"
+
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
@@ -31,7 +33,7 @@ int aesd_open(struct inode *inode, struct file *filp)
 {
 
 	struct aesd_dev *dev; /* device information */
-	PDEBUG("open");
+	PDEBUG("open\n");
 
 	dev = container_of(inode->i_cdev, struct aesd_dev, cdev);
 	filp->private_data = dev; /* for other methods */
@@ -41,7 +43,7 @@ int aesd_open(struct inode *inode, struct file *filp)
 
 int aesd_release(struct inode *inode, struct file *filp)
 {
-	PDEBUG("release");
+	PDEBUG("release\n");
 	/**
 	 * TODO: handle release
 	 */
@@ -56,7 +58,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 	struct aesd_circular_buffer *buffer = &(dev->buffer);
 	struct aesd_buffer_entry *entry;
 	size_t entry_offset_byte,size;
-	PDEBUG("read %zu bytes with offset %lld",count,*f_pos);
+	PDEBUG("read %zu bytes with offset %lld\n",count,*f_pos);
 
 	if (mutex_lock_interruptible(&dev->lock))
 		return -ERESTARTSYS;
@@ -71,7 +73,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 	if(count<size)
 		size=count;
 
-	if(copy_to_user(buf, (entry->buffptr), size)){
+	if(copy_to_user(buf, (entry->buffptr)+entry_offset_byte, size)){
 		retval = -EFAULT;
 		goto out;
 	}
@@ -91,11 +93,11 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 	size_t size = dev->entry.size;
 	struct aesd_buffer_entry entryTemp;
 	char *buffptr;
-	PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
+	PDEBUG("write %zu bytes with offset %lld\n",count,*f_pos);
 
 	if (mutex_lock_interruptible(&dev->lock))
 		return -ERESTARTSYS;
-	
+
 	entryTemp.size=size+count;
 	buffptr=kmalloc(entryTemp.size, GFP_KERNEL);
 
@@ -112,10 +114,10 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 	}
 
 	if (copy_from_user(buffptr+size, buf, count)) {
-                retval = -EFAULT;
+		retval = -EFAULT;
 		kfree(buffptr);
-                goto out;
-        }
+		goto out;
+	}
 
 	if(memchr(entryTemp.buffptr+size, '\n', count)){
 		const char *buffptrRet=aesd_circular_buffer_add_entry(&(dev->buffer),&entryTemp);
@@ -135,12 +137,100 @@ out:
 	return retval;
 }
 
+loff_t aesd_llseek(struct file *filp, loff_t off, int whence)
+{
+	loff_t newpos,size=0;
+	struct aesd_dev *dev = filp->private_data;
+	uint8_t index;
+	struct aesd_circular_buffer *buffer = &(dev->buffer);
+	struct aesd_buffer_entry *entry;
+
+	if (mutex_lock_interruptible(&dev->lock))
+		return -ERESTARTSYS;
+
+	AESD_CIRCULAR_BUFFER_FOREACH(entry,buffer,index) {
+		if(entry->buffptr)
+			size=size+entry->size;
+	}
+
+	if(size!=0){
+		newpos = fixed_size_llseek(filp, off, whence, size);
+	}
+	else{
+		newpos = -EINVAL;
+	}
+
+	mutex_unlock(&dev->lock);
+	return newpos;
+}
+
+static long aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd,
+		unsigned int write_cmd_offset)
+{
+	long retval = 0;
+	struct aesd_dev *dev = filp->private_data;
+	struct aesd_circular_buffer *buffer = &(dev->buffer);
+	uint8_t i;
+	size_t size=0;
+
+	if((write_cmd<0) || (write_cmd>=AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED))
+		return -EINVAL;
+
+	if (mutex_lock_interruptible(&dev->lock))
+		return -ERESTARTSYS;
+
+	if(buffer->entry[write_cmd].buffptr == NULL){
+		retval = -EINVAL;
+		goto out;
+	}
+
+	if(buffer->entry[write_cmd].size <= write_cmd_offset){
+		retval = -EINVAL;
+		goto out;
+	}
+
+	for(i=0; i<write_cmd; i++){
+		size=size+(buffer->entry[i]).size;
+	}
+
+	filp->f_pos = size + write_cmd_offset;
+
+out:
+	mutex_unlock(&dev->lock);
+	return retval;
+}
+
+long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+	long retval = -ENOTTY;
+	struct aesd_seekto seekto;
+
+	if (_IOC_TYPE(cmd) != AESD_IOC_MAGIC) return retval;
+	if (_IOC_NR(cmd) > AESDCHAR_IOC_MAXNR) return retval;
+
+	switch(cmd)
+	{
+		case AESDCHAR_IOCSEEKTO:
+			if(copy_from_user(&seekto, (const void __user*) arg, sizeof(seekto))){
+				retval = -EFAULT;
+			}
+			else{
+				retval = aesd_adjust_file_offset(filp, seekto.write_cmd, seekto.write_cmd_offset);
+			}
+			break;
+	}
+
+	return retval;
+}
+
 struct file_operations aesd_fops = {
 	.owner =    THIS_MODULE,
 	.read =     aesd_read,
 	.write =    aesd_write,
 	.open =     aesd_open,
 	.release =  aesd_release,
+	.llseek =   aesd_llseek,
+	.unlocked_ioctl = aesd_ioctl,
 };
 
 static int aesd_setup_cdev(struct aesd_dev *dev)

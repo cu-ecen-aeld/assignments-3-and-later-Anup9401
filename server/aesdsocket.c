@@ -12,7 +12,10 @@
 #include <time.h>
 #include <stdbool.h>
 #include <pthread.h>
+#include <sys/ioctl.h>
+#include <stdio.h>
 #include "queue.h"
+#include "../aesd-char-driver/aesd_ioctl.h"
 
 #define USE_AESD_CHAR_DEVICE 1
 
@@ -153,12 +156,31 @@ void *clientThread(void *thread_param){
 
 			if(pthread_mutex_lock(thread_args->mutex)==0){
 #if USE_AESD_CHAR_DEVICE
-				thread_args->fd=open(FILE_PATH,O_WRONLY|O_APPEND);
+				thread_args->fd=open(FILE_PATH,O_RDWR);
 				if(thread_args->fd==-1){
 					syslog(LOG_DEBUG,"fopen() client write failed\n");
 					thread_args->thread_complete=true;
+					if(pthread_mutex_unlock(thread_args->mutex))
+						syslog(LOG_DEBUG,"pthread_mutex_unlock() failed\n");
 					break;
 				}
+                                char *ioctl_cmd = "AESDCHAR_IOCSEEKTO:";
+                                if(strncmp(ioctl_cmd, packet, strlen(ioctl_cmd))==0){
+
+                                        struct aesd_seekto seekto;
+                                        char *tempPtr=strchr(packet,':');
+                                        sscanf( tempPtr, ":%u,%u", &(seekto.write_cmd), &(seekto.write_cmd_offset));
+
+                                        if(ioctl(thread_args->fd, AESDCHAR_IOCSEEKTO, &seekto)){
+                                                syslog(LOG_DEBUG,"ioctl() failed\n");
+                                                thread_args->thread_complete=true;
+                                                if(pthread_mutex_unlock(thread_args->mutex))
+                                                        syslog(LOG_DEBUG,"pthread_mutex_unlock() failed\n");
+                                                break;
+                                        }
+                                }
+                                else{
+
 #endif
 				int writeLen=write(thread_args->fd, packet, currPackLen);
 				if(writeLen==-1){
@@ -167,18 +189,14 @@ void *clientThread(void *thread_param){
 					break;
 				}
 #if USE_AESD_CHAR_DEVICE
-				close(thread_args->fd);
-				thread_args->fd=open(FILE_PATH,O_RDONLY);
-				if(thread_args->fd==-1){
-					syslog(LOG_DEBUG,"fopen() client read failed\n");
-					thread_args->thread_complete=true;
-					break;
 				}
 #endif
 #if ENABLE_SYS_FILE
 				if(lseek(thread_args->fd,0,SEEK_SET)==-1){
 					syslog(LOG_DEBUG,"lseek() failed\n");
 					thread_args->thread_complete=true;
+					if(pthread_mutex_unlock(thread_args->mutex))
+						syslog(LOG_DEBUG,"pthread_mutex_unlock() failed\n");
 					break;
 				}
 #endif
@@ -189,6 +207,8 @@ void *clientThread(void *thread_param){
 					if(sendLen==-1){
 						syslog(LOG_DEBUG,"send() packets failed\n");
 						thread_args->thread_complete=true;
+						if(pthread_mutex_unlock(thread_args->mutex))
+							syslog(LOG_DEBUG,"pthread_mutex_unlock() failed\n");
 						break;
 					}
 				}
@@ -197,6 +217,8 @@ void *clientThread(void *thread_param){
 #endif
 				if(sendLen==-1){
 					thread_args->thread_complete=true;
+					if(pthread_mutex_unlock(thread_args->mutex))
+						syslog(LOG_DEBUG,"pthread_mutex_unlock() failed\n");
 					break;
 				}
 
